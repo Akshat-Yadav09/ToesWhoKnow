@@ -3,7 +3,9 @@
 --- !u!78 &1
 TagManager:
   serializedVersion: 3
-  tags: []
+  tags:
+  - Closet
+  - Interactable
   layers:
   - Default
   - TransparentFX
@@ -40,6 +42,24 @@ TagManager:
   m_SortingLayers:
   - name: Default
     uniqueID: 0
+    locked: 0
+  - name: forward parallax
+    uniqueID: 2989530305
+    locked: 0
+  - name: front surrounding
+    uniqueID: 4104946703
+    locked: 0
+  - name: character
+    uniqueID: 1051292193
+    locked: 0
+  - name: back surroundings
+    uniqueID: 2447262235
+    locked: 0
+  - name: background
+    uniqueID: 1185451479
+    locked: 0
+  - name: background parallax
+    uniqueID: 3976975015
     locked: 0
   m_RenderingLayers:
   - Default
