@@ -153,6 +153,25 @@ namespace Akshat.Inspection
                 exitActionReference.action.performed -= OnExitActionPerformed;
                 exitActionReference.action.Disable();
             }
+
+            if (spawnedCustomVisual != null)
+            {
+                var customView = spawnedCustomVisual.GetComponentInChildren<IInspectionCustomView>();
+                if (customView != null)
+                {
+                    customView.Unbind();
+                }
+                Destroy(spawnedCustomVisual);
+                spawnedCustomVisual = null;
+            }
+
+            if (isInspecting)
+            {
+                LockGameplay(false);
+                isInspecting = false;
+                currentInspectable = null;
+                activeTransition = null;
+            }
         }
 
         private void Update()
@@ -243,15 +262,42 @@ namespace Akshat.Inspection
             // Setup custom visual prefab if provided
             if (spawnedCustomVisual != null)
             {
+                var customView = spawnedCustomVisual.GetComponentInChildren<IInspectionCustomView>();
+                if (customView != null)
+                {
+                    customView.Unbind();
+                }
                 Destroy(spawnedCustomVisual);
                 spawnedCustomVisual = null;
             }
 
-            if (inspectable.CustomVisualPrefab != null && customVisualMount != null)
+            Transform mount = customVisualMount;
+            if (mount == null || (inspectionRoot != null && !mount.IsChildOf(inspectionRoot.transform)))
             {
-                spawnedCustomVisual = Instantiate(inspectable.CustomVisualPrefab, customVisualMount);
-                spawnedCustomVisual.transform.localPosition = Vector3.zero;
+                mount = inspectionRoot != null ? inspectionRoot.transform : customVisualMount;
+            }
+
+            if (inspectable.CustomVisualPrefab != null && mount != null)
+            {
+                spawnedCustomVisual = Instantiate(inspectable.CustomVisualPrefab, mount);
+                spawnedCustomVisual.transform.SetAsLastSibling();
+                if (spawnedCustomVisual.transform is RectTransform rectTrans)
+                {
+                    rectTrans.anchoredPosition = Vector2.zero;
+                    rectTrans.localScale = Vector3.one;
+                }
+                else
+                {
+                    spawnedCustomVisual.transform.localPosition = Vector3.zero;
+                    spawnedCustomVisual.transform.localScale = Vector3.one;
+                }
                 spawnedCustomVisual.transform.localRotation = Quaternion.identity;
+
+                var customView = spawnedCustomVisual.GetComponentInChildren<IInspectionCustomView>();
+                if (customView != null)
+                {
+                    customView.Bind(inspectable, this);
+                }
             }
 
             // Setup Narrative / Clue Text
@@ -394,6 +440,11 @@ namespace Akshat.Inspection
 
             if (spawnedCustomVisual != null)
             {
+                var customView = spawnedCustomVisual.GetComponentInChildren<IInspectionCustomView>();
+                if (customView != null)
+                {
+                    customView.Unbind();
+                }
                 Destroy(spawnedCustomVisual);
                 spawnedCustomVisual = null;
             }
