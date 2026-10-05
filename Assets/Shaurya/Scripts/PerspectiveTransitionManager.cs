@@ -1,40 +1,36 @@
-// Assets/Shaurya/Scripts/PerspectiveTransitionManager.cs
-// Central coordinator for fade-to-black perspective transitions.
-// Place on a dedicated empty GameObject called "TransitionManager".
-//
-// Transition sequence:
-//   1. Fade to black
-//   2. Disable player movement
-//   3. Teleport player
-//   4. Switch camera (INSTANT CUT — Brain.DefaultBlend forced to Cut for one frame)
-//   5. Switch movement mode
-//   6. Re-enable movement
-//   7. Fade back in
-
 using System.Collections;
 using UnityEngine;
 using Unity.Cinemachine;
+using Akshat;
 
 namespace Shaurya
 {
+    using MovementMode = Akshat.MovementMode;
+
+    /// <summary>
+    /// Central manager for fade-to-black room and perspective transitions.
+    /// Operates as a singleton service so doors do not require manual manager references.
+    /// </summary>
+    [DisallowMultipleComponent]
     public class PerspectiveTransitionManager : MonoBehaviour
     {
+        public static PerspectiveTransitionManager Instance { get; private set; }
+
         // ── Inspector ─────────────────────────────────────────────────────────
 
-        [Header("Required References")]
+        [Header("Required References (Auto-Located If Unassigned)")]
         [Tooltip("The ScreenFader script attached to the full-screen black Image panel.")]
         [SerializeField] private ScreenFader screenFader;
 
-        [Tooltip("The PlayerMovementMode script on the Player GameObject.")]
-        [SerializeField] private PlayerMovementMode playerMovementMode;
+        [Tooltip("The PlayerMovement script on the Player GameObject.")]
+        [SerializeField] private PlayerMovement playerMovement;
 
         [Header("Cinemachine Multi-Room Camera System")]
         [Tooltip("The initial CinemachineCamera active at scene start (e.g. Hallway 1).\n" +
                  "If assigned, it will automatically be activated on Start.")]
         [SerializeField] private CinemachineCamera startingCamera;
 
-        [Tooltip("All CinemachineCamera objects used in this scene.\n" +
-                 "Drag every hallway and room camera here. They will all start disabled except startingCamera.")]
+        [Tooltip("Optional list of cameras to disable at scene start. If empty, cameras are managed on-demand.")]
         [SerializeField] private CinemachineCamera[] allCameras;
 
         [Header("Legacy CameraController (Optional Fallback)")]
@@ -44,18 +40,49 @@ namespace Shaurya
         [SerializeField] private float topDownCameraSize = 8f;
         [SerializeField] private float cameraTransitionSpeed = 10f;
 
+        [Header("Room Management (Culling)")]
+        [Tooltip("The initial RoomZone active at scene start.")]
+        [SerializeField] private Akshat.RoomSystem.RoomZone startingRoom;
+
+        [Tooltip("Optional list of rooms to manage. Auto-located if empty.")]
+        [SerializeField] private Akshat.RoomSystem.RoomZone[] allRooms;
+
         // ── State ─────────────────────────────────────────────────────────────
 
         public bool IsTransitioning { get; private set; }
 
         private CinemachineCamera currentCamera;
+        private Akshat.RoomSystem.RoomZone currentRoom;
         private CinemachineBrain brain;
 
         // ── Lifecycle ─────────────────────────────────────────────────────────
 
         private void Awake()
         {
-            // Cache the CinemachineBrain from the main camera.
+            // Singleton registration
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else if (Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            // Auto-locate player if unassigned
+            if (playerMovement == null)
+            {
+                playerMovement = FindAnyObjectByType<PlayerMovement>();
+            }
+
+            // Auto-locate screen fader if unassigned
+            if (screenFader == null)
+            {
+                screenFader = FindAnyObjectByType<ScreenFader>();
+            }
+
+            // Cache the CinemachineBrain from the main camera
             var mainCam = Camera.main;
             if (mainCam != null)
                 brain = mainCam.GetComponent<CinemachineBrain>();
@@ -66,10 +93,36 @@ namespace Shaurya
 
         private void Start()
         {
-            // Disable all cameras, then enable only the starting one.
-            if (allCameras != null)
+            // Auto-locate rooms if not assigned
+            if (allRooms == null || allRooms.Length == 0)
+            {
+                allRooms = FindObjectsByType<Akshat.RoomSystem.RoomZone>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            }
+
+            // Disable all rooms except the starting room
+            if (allRooms != null && allRooms.Length > 0)
+            {
+                foreach (var room in allRooms)
+                {
+                    if (room != null && room != startingRoom)
+                    {
+                        room.gameObject.SetActive(false);
+                    }
+                }
+            }
+
+            if (startingRoom != null)
+            {
+                startingRoom.gameObject.SetActive(true);
+                currentRoom = startingRoom;
+            }
+
+            // Disable all cameras if explicitly configured, then enable only the starting one
+            if (allCameras != null && allCameras.Length > 0)
+            {
                 foreach (var cam in allCameras)
                     if (cam != null) cam.gameObject.SetActive(false);
+            }
 
             if (startingCamera != null)
             {
@@ -77,75 +130,109 @@ namespace Shaurya
                 currentCamera = startingCamera;
             }
 
-            // Set the Brain's default blend to Cut so all transitions are instant.
-            // Individual smooth motion is handled by Position Composer damping, not camera blends.
+            // Set the Brain's default blend to Cut so all transitions are instant
             if (brain != null)
                 brain.DefaultBlend = new CinemachineBlendDefinition(CinemachineBlendDefinition.Styles.Cut, 0f);
         }
 
         // ── Public API ────────────────────────────────────────────────────────
 
-        public void BeginTransition(Transform destination, MovementMode targetMode, CinemachineCamera targetCamera = null)
+        public void BeginTransition(Transform destination, Akshat.MovementMode targetMode, CinemachineCamera targetCamera = null, Akshat.RoomSystem.RoomZone targetRoom = null)
+        {
+            if (destination == null)
+            {
+                Debug.LogError("[PerspectiveTransitionManager] Destination is null. Aborted.");
+                return;
+            }
+            BeginTransition(destination.position, targetMode, targetCamera, targetRoom);
+        }
+
+        public void BeginTransition(Vector3 destinationPosition, Akshat.MovementMode targetMode, CinemachineCamera targetCamera = null, Akshat.RoomSystem.RoomZone targetRoom = null)
         {
             if (IsTransitioning)
             {
                 Debug.LogWarning("[PerspectiveTransitionManager] Already transitioning. Ignored.");
                 return;
             }
-            if (destination == null)
-            {
-                Debug.LogError("[PerspectiveTransitionManager] Destination is null. Aborted.");
-                return;
-            }
-            StartCoroutine(TransitionCoroutine(destination.position, targetMode, targetCamera));
+
+            StartCoroutine(TransitionCoroutine(destinationPosition, targetMode, targetCamera, targetRoom));
         }
 
         // ── Coroutine ─────────────────────────────────────────────────────────
 
-        private IEnumerator TransitionCoroutine(Vector3 destinationPosition, MovementMode targetMode, CinemachineCamera targetCamera)
+        private IEnumerator TransitionCoroutine(Vector3 destinationPosition, Akshat.MovementMode targetMode, CinemachineCamera targetCamera, Akshat.RoomSystem.RoomZone targetRoom)
         {
             IsTransitioning = true;
 
-            // ── 1. Fade to black ───────────────────────────────────────────────
-            if (screenFader != null)
-                yield return StartCoroutine(screenFader.FadeOut());
-            else
-                yield return new WaitForSecondsRealtime(0.35f);
+            try
+            {
+                // ── 1. Disable player movement immediately to freeze input & cancel velocity ──
+                if (playerMovement != null)
+                    playerMovement.SetMovementEnabled(false);
 
-            // ── 2. Disable player movement ─────────────────────────────────────
-            if (playerMovementMode != null)
-                playerMovementMode.SetMovementEnabled(false);
+                // ── 2. Fade to black ───────────────────────────────────────────────
+                if (screenFader != null)
+                    yield return StartCoroutine(screenFader.FadeOut());
+                else
+                    yield return new WaitForSecondsRealtime(0.35f);
 
-            // ── 3. Teleport player ─────────────────────────────────────────────
-            if (playerMovementMode != null)
-                playerMovementMode.transform.position = destinationPosition;
+                // ── 3. Room Culling & Teleport ──────────────────────────────────────
+                // First: Turn ON the destination room so its floor and colliders exist
+                if (targetRoom != null && targetRoom != currentRoom)
+                {
+                    targetRoom.gameObject.SetActive(true);
+                }
 
-            // ── 4. Instant camera switch ───────────────────────────────────────
-            // Screen is fully black here. Switch camera and snap instantly.
-            if (targetCamera != null)
-                SwitchCameraInstant(targetCamera, destinationPosition);
-            else
-                ApplyCameraForMode(targetMode, destinationPosition);
+                // Second: Teleport the player safely into the new room
+                if (playerMovement != null)
+                {
+                    playerMovement.Teleport(destinationPosition);
+                }
 
-            // ── 5. Switch movement mode ────────────────────────────────────────
-            if (playerMovementMode != null)
-                playerMovementMode.SetMode(targetMode);
+                // Third: Deactivate the old room now that the player is safely in the new room
+                if (currentRoom != null && targetRoom != null && currentRoom != targetRoom)
+                {
+                    currentRoom.gameObject.SetActive(false);
+                    currentRoom = targetRoom;
+                }
+                else if (targetRoom != null)
+                {
+                    currentRoom = targetRoom;
+                }
 
-            // ── 6. Wait for Cinemachine to process the cut in LateUpdate ────────
-            // (Brain runs in LateUpdate so we need at least one full frame after
-            //  the camera switch before the scene is revealed.)
-            yield return null;
-            yield return new WaitForEndOfFrame();
+                // ── 4. Switch movement mode (updates gravity scale & resets velocity) ──
+                if (playerMovement != null)
+                    playerMovement.SetMode(targetMode);
 
-            // ── 7. Re-enable movement ──────────────────────────────────────────
-            if (playerMovementMode != null)
-                playerMovementMode.SetMovementEnabled(true);
+                // ── 5. Instant camera switch ───────────────────────────────────────
+                if (targetCamera != null)
+                    SwitchCameraInstant(targetCamera, destinationPosition);
+                else
+                    ApplyCameraForMode(targetMode, destinationPosition);
 
-            // ── 8. Fade back in ────────────────────────────────────────────────
-            if (screenFader != null)
-                yield return StartCoroutine(screenFader.FadeIn());
+                // ── 6. Physics & Render Sync ───────────────────────────────────────
+                Physics2D.SyncTransforms();
+                yield return new WaitForFixedUpdate();
+                yield return null;
+                yield return new WaitForEndOfFrame();
 
-            IsTransitioning = false;
+                // Re-confirm player position & zero velocity after fixed update settling
+                if (playerMovement != null)
+                {
+                    playerMovement.Teleport(destinationPosition);
+                    playerMovement.SetMovementEnabled(true);
+                }
+
+                // ── 7. Fade back in ────────────────────────────────────────────────
+                if (screenFader != null)
+                    yield return StartCoroutine(screenFader.FadeIn());
+            }
+            finally
+            {
+                IsTransitioning = false;
+                if (playerMovement != null)
+                    playerMovement.SetMovementEnabled(true);
+            }
         }
 
         // ── Camera Switching ──────────────────────────────────────────────────
@@ -154,25 +241,19 @@ namespace Shaurya
         {
             if (newCamera == null) return;
 
-            // Disable the old camera. With only one camera active, Cinemachine cannot blend.
             if (currentCamera != null && currentCamera != newCamera)
                 currentCamera.gameObject.SetActive(false);
 
-            // Enable new camera.
             newCamera.gameObject.SetActive(true);
 
-            // ForceCameraPosition resets internal damping history so damping
-            // starts fresh from the player's NEW position, not the old one.
-            // The Z=-10 keeps the 2D camera at the correct depth.
             Vector3 camPos = new Vector3(snapPosition.x, snapPosition.y, -10f);
             newCamera.ForceCameraPosition(camPos, Quaternion.identity);
 
-            // Notify all Cinemachine cameras that the tracked object warped.
-            if (playerMovementMode != null)
+            if (playerMovement != null)
             {
                 CinemachineCore.OnTargetObjectWarped(
-                    playerMovementMode.transform,
-                    snapPosition - playerMovementMode.transform.position);
+                    playerMovement.transform,
+                    snapPosition - playerMovement.transform.position);
             }
 
             currentCamera = newCamera;
@@ -181,10 +262,10 @@ namespace Shaurya
 
         // ── Legacy Fallback ───────────────────────────────────────────────────
 
-        private void ApplyCameraForMode(MovementMode mode, Vector3 playerPosition)
+        private void ApplyCameraForMode(Akshat.MovementMode mode, Vector3 playerPosition)
         {
             if (cameraController == null) return;
-            if (mode == MovementMode.TopDown)
+            if (mode == Akshat.MovementMode.TopDown)
                 cameraController.EnterTriggerZone(playerPosition, topDownCameraSize, cameraTransitionSpeed);
             else
                 cameraController.ExitTriggerZone(cameraTransitionSpeed);
