@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Events;
 using Unity.Cinemachine;
 using Akshat;
 using Akshat.Interaction;
@@ -40,10 +41,31 @@ namespace Akshat.RoomSystem
         [Range(0f, 1f)]
         [SerializeField] private float soundVolume = 1f;
 
+        [Header("Lock Settings")]
+        [SerializeField] private bool isLocked = false;
+        [SerializeField] private string lockedPrompt = "Door Locked";
+        [SerializeField] private AudioClip lockedSound;
+
+        [Header("Events")]
+        [Tooltip("Optional event invoked when the door is opened/used (e.g. to trigger Coming Soon, cutscenes, etc.).")]
+        [SerializeField] private UnityEvent onDoorUsed;
+
         // Internal State
         private AudioSource audioSource;
 
-        public string InteractionPrompt => promptText;
+        public string InteractionPrompt => isLocked ? lockedPrompt : promptText;
+
+        public bool IsLocked => isLocked;
+        
+        public void SetLocked(bool locked)
+        {
+            isLocked = locked;
+        }
+        
+        public void Unlock()
+        {
+            isLocked = false;
+        }
 
         public bool CanInteract()
         {
@@ -55,14 +77,26 @@ namespace Akshat.RoomSystem
         {
             if (!CanInteract()) return;
 
-            if (targetDoor == null)
+            if (isLocked)
             {
-                Debug.LogWarning($"[LinkedDoor] <b>{gameObject.name}</b> has no Target Door assigned!", this);
+                if (lockedSound != null)
+                {
+                    if (audioSource == null) audioSource = GetComponent<AudioSource>();
+                    if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+                    audioSource.PlayOneShot(lockedSound, soundVolume);
+                }
                 return;
             }
 
             // Play local door sound if available
             PlayDoorSound();
+
+            onDoorUsed?.Invoke();
+
+            if (targetDoor == null)
+            {
+                return;
+            }
 
             // Extract target data directly from the counterpart door
             Vector3 destinationPos = GetDestinationPosition();

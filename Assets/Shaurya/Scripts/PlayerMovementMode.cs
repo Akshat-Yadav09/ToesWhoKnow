@@ -66,6 +66,33 @@ namespace Shaurya
             "If left empty, the script falls back to direct keyboard polling.")]
         [SerializeField] private InputActionReference moveActionReference;
 
+        [Header("Footstep Audio")]
+        [Tooltip("Single footstep clip, or continuous walking loop clip.")]
+        [SerializeField] private AudioClip footstepClip;
+
+        [Tooltip("Optional array of footstep clips played randomly for natural variation.")]
+        [SerializeField] private AudioClip[] footstepClips;
+
+        [Tooltip("If true, plays footstepClip as a continuous loop while moving. If false, plays footstep sounds at intervals.")]
+        [SerializeField] private bool useLoopingAudio = false;
+
+        [Tooltip("AudioSource used to play footstep audio. Auto-found or added if unassigned.")]
+        [SerializeField] private AudioSource footstepAudioSource;
+
+        [Tooltip("Time in seconds between footsteps when not looping.")]
+        [SerializeField] private float stepInterval = 0.35f;
+
+        [Tooltip("Minimum velocity required to trigger footsteps.")]
+        [SerializeField] private float minMoveVelocity = 0.15f;
+
+        [Tooltip("Volume of footstep audio (0 to 1).")]
+        [Range(0f, 1f)]
+        [SerializeField] private float footstepVolume = 0.7f;
+
+        [Tooltip("Random pitch variation range (+/-) to keep footsteps from sounding robotic.")]
+        [Range(0f, 0.3f)]
+        [SerializeField] private float pitchVariation = 0.05f;
+
         // ── Internal state ────────────────────────────────────────────────────
 
         private Rigidbody2D rb;
@@ -77,6 +104,7 @@ namespace Shaurya
 
         // Cached initial local scale for correct scale-flip math.
         private Vector3 initialScale;
+        private float stepTimer;
 
         // ── Public API ────────────────────────────────────────────────────────
 
@@ -102,7 +130,10 @@ namespace Shaurya
             movementEnabled = enabled;
 
             if (!enabled)
+            {
                 StopRigidbodyVelocity();
+                StopFootstepAudio();
+            }
         }
 
         // ── Unity lifecycle ───────────────────────────────────────────────────
@@ -114,6 +145,9 @@ namespace Shaurya
 
             if (spriteRenderer == null)
                 spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+
+            if (footstepAudioSource == null)
+                footstepAudioSource = GetComponent<AudioSource>();
 
             initialScale  = transform.localScale;
             currentMode   = startingMode;
@@ -141,6 +175,8 @@ namespace Shaurya
             // Sprite facing is only meaningful when there is horizontal intent.
             if (currentMode == MovementMode.Hallway || currentMode == MovementMode.TopDown)
                 HandleFacingDirection();
+
+            UpdateFootstepAudio();
         }
 
         private void FixedUpdate()
@@ -266,5 +302,120 @@ namespace Shaurya
             if (rb != null) rb.velocity = Vector2.zero;
 #endif
         }
+
+        #region Footstep Audio Implementation
+        private void UpdateFootstepAudio()
+        {
+            bool hasClips = footstepClip != null || (footstepClips != null && footstepClips.Length > 0);
+            if (!hasClips) return;
+
+            bool isCurrentlyMoving = false;
+            if (rb != null)
+            {
+#if UNITY_6000_0_OR_NEWER
+                Vector2 vel = rb.linearVelocity;
+#else
+                Vector2 vel = rb.velocity;
+#endif
+                float speed = (currentMode == MovementMode.Hallway) ? Mathf.Abs(vel.x) : vel.magnitude;
+                isCurrentlyMoving = speed > minMoveVelocity && rawInput.magnitude > 0.05f;
+            }
+            else
+            {
+                isCurrentlyMoving = rawInput.magnitude > 0.05f;
+            }
+
+            if (useLoopingAudio)
+            {
+                if (footstepAudioSource == null) InitAudioSource();
+                if (footstepAudioSource == null) return;
+
+                if (isCurrentlyMoving)
+                {
+                    if (!footstepAudioSource.isPlaying)
+                    {
+                        if (footstepClip != null) footstepAudioSource.clip = footstepClip;
+                        footstepAudioSource.loop = true;
+                        footstepAudioSource.volume = footstepVolume;
+                        footstepAudioSource.Play();
+                    }
+                }
+                else
+                {
+                    if (footstepAudioSource.isPlaying)
+                    {
+                        footstepAudioSource.Stop();
+                    }
+                }
+            }
+            else
+            {
+                if (isCurrentlyMoving)
+                {
+                    stepTimer += Time.deltaTime;
+                    if (stepTimer >= stepInterval)
+                    {
+                        stepTimer = 0f;
+                        PlayFootstep();
+                    }
+                }
+                else
+                {
+                    stepTimer = stepInterval * 0.85f;
+                }
+            }
+        }
+
+        private void PlayFootstep()
+        {
+            AudioClip clipToPlay = footstepClip;
+
+            if (footstepClips != null && footstepClips.Length > 0)
+            {
+                int validCount = 0;
+                for (int i = 0; i < footstepClips.Length; i++)
+                {
+                    if (footstepClips[i] != null) validCount++;
+                }
+
+                if (validCount > 0)
+                {
+                    int randIdx = Random.Range(0, footstepClips.Length);
+                    clipToPlay = footstepClips[randIdx] ?? footstepClip;
+                }
+            }
+
+            if (clipToPlay == null) return;
+
+            if (footstepAudioSource == null) InitAudioSource();
+            if (footstepAudioSource == null) return;
+
+            footstepAudioSource.pitch = 1f + Random.Range(-pitchVariation, pitchVariation);
+            footstepAudioSource.PlayOneShot(clipToPlay, footstepVolume);
+        }
+
+        private void StopFootstepAudio()
+        {
+            if (footstepAudioSource != null && footstepAudioSource.isPlaying)
+            {
+                footstepAudioSource.Stop();
+            }
+            stepTimer = stepInterval * 0.85f;
+        }
+
+        private void InitAudioSource()
+        {
+            if (footstepAudioSource != null) return;
+
+            footstepAudioSource = GetComponent<AudioSource>();
+            if (footstepAudioSource == null)
+            {
+                footstepAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+
+            footstepAudioSource.playOnAwake = false;
+            footstepAudioSource.spatialBlend = 0f;
+        }
+        #endregion
     }
 }
