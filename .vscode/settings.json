@@ -67,5 +67,5 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "ToesWhoKnow.slnx"
+    "dotnet.defaultSolution": "toes who know.slnx"
 }

@@ -22,7 +22,9 @@ namespace Shaurya.MainMenu
 
         [Header("Movement")]
         [Tooltip("1.10 keeps video edges out of frame during head movement.")]
+#pragma warning disable CS0414
         [SerializeField] private float viewRootScale = 1.10f;
+#pragma warning restore CS0414
 
         [Tooltip("Maximum horizontal offset (pixels) ViewRoot can travel.")]
         [SerializeField] private float horizontalLimit = 70f;

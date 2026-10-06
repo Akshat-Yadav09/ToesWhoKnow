@@ -36,7 +36,9 @@ namespace Shaurya
         [Header("Legacy CameraController (Optional Fallback)")]
         [Tooltip("Leave empty if using Cinemachine.")]
         [SerializeField] private CameraController cameraController;
+#pragma warning disable CS0414
         [SerializeField] private float hallwayCameraSize = 5f;
+#pragma warning restore CS0414
         [SerializeField] private float topDownCameraSize = 8f;
         [SerializeField] private float cameraTransitionSpeed = 10f;
 
@@ -96,7 +98,7 @@ namespace Shaurya
             // Auto-locate rooms if not assigned
             if (allRooms == null || allRooms.Length == 0)
             {
-                allRooms = FindObjectsByType<Akshat.RoomSystem.RoomZone>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                allRooms = FindObjectsByType<Akshat.RoomSystem.RoomZone>(FindObjectsInactive.Include);
             }
 
             // Disable all rooms except the starting room
