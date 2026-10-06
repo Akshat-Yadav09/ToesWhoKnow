@@ -37,6 +37,22 @@ namespace Akshat.Inspection
         [SerializeField] private float shakeAmount = 8f;
         [SerializeField] private float shakeDuration = 0.25f;
 
+        [Header("Input Field Styling")]
+        [Tooltip("Font color of typed letters inside the input field (defaults to dark charcoal so it is clearly visible against the white input box).")]
+        [SerializeField] private Color inputTextColor = new Color(0.12f, 0.12f, 0.12f, 1f);
+
+        [Tooltip("Caret (blinking cursor) color in the input field.")]
+        [SerializeField] private Color caretColor = new Color(0.12f, 0.12f, 0.12f, 1f);
+
+        [Tooltip("Text color inside the input field when an incorrect book is submitted.")]
+        [SerializeField] private Color errorInputTextColor = new Color(0.85f, 0.15f, 0.15f, 1f);
+
+        [Tooltip("Text color inside the input field when the correct book is found.")]
+        [SerializeField] private Color successInputTextColor = new Color(0.1f, 0.65f, 0.15f, 1f);
+
+        [Tooltip("Optional override font asset for the input field to ensure all uppercase letters (A-Z) render reliably.")]
+        [SerializeField] private TMP_FontAsset inputFontAsset;
+
         private BookshelfSearchInteractable currentInteractable;
         private InspectionManager currentManager;
 
@@ -59,7 +75,9 @@ namespace Akshat.Inspection
                 originalInputPos = initialsInput.transform.localPosition;
                 initialsInput.characterLimit = 2;
                 initialsInput.onValidateInput = ValidateLetterInput;
+                initialsInput.onValueChanged.AddListener(OnInputValueChanged);
                 initialsInput.onSubmit.AddListener(OnInputSubmit);
+                ConfigureInputField();
             }
 
             if (searchButton != null)
@@ -86,6 +104,7 @@ namespace Akshat.Inspection
             if (initialsInput != null)
             {
                 initialsInput.onValidateInput = null;
+                initialsInput.onValueChanged.RemoveListener(OnInputValueChanged);
                 initialsInput.onSubmit.RemoveListener(OnInputSubmit);
                 initialsInput.transform.localPosition = originalInputPos;
             }
@@ -102,6 +121,99 @@ namespace Akshat.Inspection
 
             currentInteractable = null;
             currentManager = null;
+        }
+
+        private void ConfigureInputField()
+        {
+            if (initialsInput == null) return;
+
+            // Safety guard: if inspector has transparent or pure white assigned, enforce readable dark color
+            if (inputTextColor.a < 0.1f || (inputTextColor.r > 0.9f && inputTextColor.g > 0.9f && inputTextColor.b > 0.9f))
+            {
+                inputTextColor = new Color(0.12f, 0.12f, 0.12f, 1f);
+            }
+
+            if (caretColor.a < 0.1f || (caretColor.r > 0.9f && caretColor.g > 0.9f && caretColor.b > 0.9f))
+            {
+                caretColor = inputTextColor;
+            }
+
+            // Font asset: verify font can display uppercase letters A-Z without missing glyphs
+            if (initialsInput.textComponent != null)
+            {
+                if (inputFontAsset != null)
+                {
+                    initialsInput.textComponent.font = inputFontAsset;
+                }
+                else if (initialsInput.textComponent.font == null || !initialsInput.textComponent.font.HasCharacter('A', true, true))
+                {
+                    TMP_FontAsset defaultFont = TMP_Settings.defaultFontAsset;
+                    if (defaultFont != null)
+                    {
+                        initialsInput.textComponent.font = defaultFont;
+                    }
+                }
+
+                initialsInput.textComponent.color = inputTextColor;
+                initialsInput.textComponent.alignment = TextAlignmentOptions.Center;
+                initialsInput.textComponent.overflowMode = TextOverflowModes.Overflow;
+                initialsInput.textComponent.textWrappingMode = TextWrappingModes.NoWrap;
+            }
+
+            // Visible caret (cursor)
+            initialsInput.customCaretColor = true;
+            initialsInput.caretColor = caretColor;
+            initialsInput.caretWidth = 2;
+
+            // Selection highlight
+            initialsInput.selectionColor = new Color(0.2f, 0.5f, 1f, 0.35f);
+
+            // Ensure text area / viewport has comfortable padding and does not clip with RectMask2D
+            if (initialsInput.textViewport != null)
+            {
+                initialsInput.textViewport.anchorMin = Vector2.zero;
+                initialsInput.textViewport.anchorMax = Vector2.one;
+                initialsInput.textViewport.offsetMin = new Vector2(8f, 2f);
+                initialsInput.textViewport.offsetMax = new Vector2(-8f, -2f);
+            }
+
+            if (initialsInput.textComponent != null)
+            {
+                RectTransform textRect = initialsInput.textComponent.rectTransform;
+                textRect.anchorMin = Vector2.zero;
+                textRect.anchorMax = Vector2.one;
+                textRect.offsetMin = Vector2.zero;
+                textRect.offsetMax = Vector2.zero;
+                textRect.anchoredPosition = Vector2.zero;
+            }
+
+            // Configure placeholder if present
+            if (initialsInput.placeholder is TMP_Text placeholder)
+            {
+                placeholder.alignment = TextAlignmentOptions.Center;
+                placeholder.color = new Color(0.5f, 0.5f, 0.5f, 0.6f);
+                if (initialsInput.textComponent != null && initialsInput.textComponent.font != null)
+                {
+                    placeholder.font = initialsInput.textComponent.font;
+                }
+            }
+        }
+
+        private void OnInputValueChanged(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return;
+
+            string upper = value.ToUpperInvariant();
+            if (upper != value)
+            {
+                initialsInput.text = upper;
+                initialsInput.caretPosition = upper.Length;
+            }
+
+            if (initialsInput.textComponent != null)
+            {
+                initialsInput.textComponent.color = inputTextColor;
+            }
         }
 
         private char ValidateLetterInput(string text, int charIndex, char addedChar)
@@ -136,7 +248,7 @@ namespace Akshat.Inspection
             {
                 if (initialsInput.textComponent != null)
                 {
-                    initialsInput.textComponent.color = isSolved ? successTextColor : normalTextColor;
+                    initialsInput.textComponent.color = isSolved ? successInputTextColor : inputTextColor;
                 }
 
                 if (isSolved)
@@ -198,7 +310,7 @@ namespace Akshat.Inspection
                 initialsInput.interactable = false;
                 if (initialsInput.textComponent != null)
                 {
-                    initialsInput.textComponent.color = successTextColor;
+                    initialsInput.textComponent.color = successInputTextColor;
                 }
             }
 
@@ -235,7 +347,7 @@ namespace Akshat.Inspection
             {
                 if (initialsInput.textComponent != null)
                 {
-                    initialsInput.textComponent.color = errorTextColor;
+                    initialsInput.textComponent.color = errorInputTextColor;
                 }
 
                 // Shake effect on the input box
@@ -253,7 +365,7 @@ namespace Akshat.Inspection
                 initialsInput.text = "";
                 if (initialsInput.textComponent != null)
                 {
-                    initialsInput.textComponent.color = normalTextColor;
+                    initialsInput.textComponent.color = inputTextColor;
                 }
 
                 initialsInput.Select();

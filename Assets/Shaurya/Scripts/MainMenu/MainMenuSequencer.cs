@@ -334,7 +334,7 @@ namespace Shaurya.MainMenu
         public void BeginDialogueSequence(BlackScreenController bsc = null)
         {
             if (bsc != null) blackScreenController = bsc;
-            else if (blackScreenController == null) blackScreenController = FindObjectOfType<BlackScreenController>();
+            else if (blackScreenController == null) blackScreenController = FindAnyObjectByType<BlackScreenController>();
 
             StartCoroutine(DialogueThenCinematicRoutine());
         }

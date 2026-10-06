@@ -47,10 +47,7 @@ namespace Akshat.Interaction
                 Instance = this;
             }
 
-            if (canvasGroup == null)
-            {
-                canvasGroup = GetComponent<CanvasGroup>();
-            }
+            AutoBindComponents();
 
             // Start completely invisible and non-blocking
             if (canvasGroup != null)
@@ -68,6 +65,30 @@ namespace Akshat.Interaction
             if (subtitleText != null && !string.IsNullOrEmpty(subtitleMessage))
             {
                 subtitleText.text = subtitleMessage;
+            }
+        }
+
+        private void Reset()
+        {
+            AutoBindComponents();
+        }
+
+        private void AutoBindComponents()
+        {
+            if (canvasGroup == null)
+            {
+                canvasGroup = GetComponent<CanvasGroup>();
+                if (canvasGroup == null) canvasGroup = GetComponentInChildren<CanvasGroup>(true);
+            }
+
+            var texts = GetComponentsInChildren<TMP_Text>(true);
+            if (mainText == null && texts.Length > 0)
+            {
+                mainText = texts[0];
+            }
+            if (subtitleText == null && texts.Length > 1)
+            {
+                subtitleText = texts[1];
             }
         }
 

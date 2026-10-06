@@ -110,7 +110,7 @@ namespace Akshat.Interaction
         
         private void HandleInspectionEnded(IInspectable inspectable)
         {
-            if (inspectable == this)
+            if (inspectable as PasscodeLockInteractable == this)
             {
                 if (InspectionManager.Instance != null)
                 {

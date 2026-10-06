@@ -1,5 +1,6 @@
 using UnityEngine;
 using Akshat.Interaction;
+using Akshat.RoomSystem;
 
 namespace Akshat.Inspection
 {
@@ -18,6 +19,16 @@ namespace Akshat.Inspection
 
         [Tooltip("Whether this object is currently available for interaction and inspection.")]
         [SerializeField] private bool isInspectable = true;
+
+        [Header("Lighting / Power Requirement (Optional)")]
+        [Tooltip("If true, requires room electricity before this object can be inspected. Shows powerlessMessage if dark.")]
+        [SerializeField] private bool requireRoomElectricity = false;
+
+        [Tooltip("Optional direct reference to RoomElectricity. Auto-located in parent room if unassigned.")]
+        [SerializeField] private RoomElectricity roomElectricity;
+
+        [Tooltip("Message displayed when player tries to inspect while the room has no electricity.")]
+        [SerializeField] private string powerlessMessage = "It's too dark in here to see the picture.";
 
         [Header("Inspection Visual Source")]
         [Tooltip("Sprite to present during inspection. If unassigned, automatically taken from attached SpriteRenderer.")]
@@ -53,6 +64,21 @@ namespace Akshat.Inspection
         {
             if (!CanInteract()) return;
 
+            // Check if room electricity is required and currently off
+            if (requireRoomElectricity)
+            {
+                if (roomElectricity == null)
+                {
+                    roomElectricity = GetComponentInParent<RoomElectricity>();
+                }
+
+                if (roomElectricity != null && !roomElectricity.HasElectricity)
+                {
+                    PlayerMessageUI.Show(powerlessMessage);
+                    return;
+                }
+            }
+
             var manager = inspectionManager != null ? inspectionManager : InspectionManager.Instance;
             if (manager != null)
             {
@@ -84,6 +110,11 @@ namespace Akshat.Inspection
                     inspectionSprite = sr.sprite;
                     visualColor = sr.color;
                 }
+            }
+
+            if (requireRoomElectricity && roomElectricity == null)
+            {
+                roomElectricity = GetComponentInParent<RoomElectricity>();
             }
         }
 
